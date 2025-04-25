@@ -10,3 +10,8 @@ Download Astronomical Picture of the Day! This script is just a way to run <h>ht
 ## Recommendations
 
 Use your autostart or exec-once to run the script when booting your pc then just use your wallpaper manager to load the wallpaper images from you pictures folder.
+
+## IMAGES OF THE DAY
+
+![IMAGE 1](https://raw.githubusercontent.com/yohanduartep/APOD-Script/refs/heads/main/001.jpg)
+![IMAGE 2](https://raw.githubusercontent.com/yohanduartep/APOD-Script/refs/heads/main/002.jpg)
