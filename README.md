@@ -22,3 +22,11 @@ Linux support includes GNOME, Cinnamon, KDE Plasma, Xfce, and `feh`.
 ```
 
 Python 3 is required.
+
+## Wallpapers
+
+![Wallpaper 1](https://raw.githubusercontent.com/yohanduartep/APOD-Script/refs/heads/main/001.jpg)
+
+![Wallpaper 2](https://raw.githubusercontent.com/yohanduartep/APOD-Script/refs/heads/main/002.jpg)
+
+![Wallpaper 3](https://raw.githubusercontent.com/yohanduartep/APOD-Script/refs/heads/main/003.jpg)
