@@ -4,6 +4,7 @@ import ctypes
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -12,7 +13,7 @@ import urllib.request
 from pathlib import Path
 
 
-IMAGE_URL = "https://raw.githubusercontent.com/yohanduartep/APOD-Script/refs/heads/main/001.jpg"
+CONTENTS_URL = "https://api.github.com/repos/yohanduartep/APOD-Script/contents"
 MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024
 
 
@@ -29,33 +30,53 @@ def cache_directory() -> Path:
     return Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "apod"
 
 
-def download_wallpaper() -> Path:
-    directory = cache_directory()
-    directory.mkdir(parents=True, exist_ok=True)
-    run_id = time.time_ns()
-    temporary = directory / f"wallpaper-{run_id}.tmp"
+def repository_images() -> list[tuple[str, str]]:
     request = urllib.request.Request(
-        f"{IMAGE_URL}?v={time.time_ns()}",
-        headers={"User-Agent": "apod-launcher/1.0"},
+        f"{CONTENTS_URL}?ref=main&v={time.time_ns()}",
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "apod-launcher/1.0"},
     )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        entries = json.load(response)
+    images = [
+        (entry["name"], entry["download_url"])
+        for entry in entries
+        if entry.get("type") == "file"
+        and re.fullmatch(r"\d{3}\.(?:jpe?g|png|gif|bmp|webp)", entry.get("name", ""), re.IGNORECASE)
+        and entry.get("download_url")
+    ]
+    if not images:
+        raise RuntimeError("APOD-Script has no published wallpaper images")
+    return sorted(images)
+
+
+def download_image(name: str, url: str, directory: Path, run_id: int) -> Path:
+    temporary = directory / f".{name}-{run_id}.tmp"
+    request = urllib.request.Request(f"{url}?v={run_id}", headers={"User-Agent": "apod-launcher/1.0"})
     try:
         with urllib.request.urlopen(request, timeout=30) as response, temporary.open("wb") as output:
             content_length = response.headers.get("Content-Length")
             if content_length and content_length.isdigit() and int(content_length) > MAX_DOWNLOAD_BYTES:
-                raise RuntimeError("Wallpaper exceeds 100 MB")
+                raise RuntimeError(f"{name} exceeds 100 MB")
             downloaded = 0
             while chunk := response.read(1024 * 1024):
                 downloaded += len(chunk)
                 if downloaded > MAX_DOWNLOAD_BYTES:
-                    raise RuntimeError("Wallpaper exceeds 100 MB")
+                    raise RuntimeError(f"{name} exceeds 100 MB")
                 output.write(chunk)
         suffix = image_suffix(temporary)
-        destination = directory / f"wallpaper-{run_id}{suffix}"
+        destination = directory / f"wallpaper-{run_id}-{Path(name).stem}{suffix}"
         temporary.replace(destination)
+        return destination
     except Exception:
         temporary.unlink(missing_ok=True)
         raise
-    return destination
+
+
+def download_wallpapers() -> list[Path]:
+    directory = cache_directory()
+    directory.mkdir(parents=True, exist_ok=True)
+    run_id = time.time_ns()
+    return [download_image(name, url, directory, run_id) for name, url in repository_images()]
 
 
 def image_suffix(path: Path) -> str:
@@ -74,41 +95,76 @@ def image_suffix(path: Path) -> str:
     raise RuntimeError("Downloaded file is not a supported image")
 
 
-def set_macos(path: Path) -> None:
+def set_macos(paths: list[Path]) -> list[Path]:
     xattr = command("xattr")
     if xattr:
-        subprocess.run(
-            [xattr, "-d", "com.apple.quarantine", str(path)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-    path_literal = json.dumps(str(path))
-    script = f"""ObjC.import('AppKit');
-var path = {path_literal};
-var workspace = $.NSWorkspace.sharedWorkspace;
-var url = $.NSURL.fileURLWithPath(path);
-$.NSScreen.screens.js.forEach(function(screen) {{
-    var options = workspace.desktopImageOptionsForScreen(screen);
-    var error = Ref();
-    var success = workspace.setDesktopImageURLForScreenOptionsError(url, screen, options, error);
-    if (!success) throw new Error(error[0] ? error[0].localizedDescription.js : 'Wallpaper update failed');
-    if (workspace.desktopImageURLForScreen(screen).path.js !== path) throw new Error('Wallpaper update was not retained');
-}});"""
+        for path in paths:
+            subprocess.run(
+                [xattr, "-d", "com.apple.quarantine", str(path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
     osascript = command("osascript")
     if not osascript:
         raise RuntimeError("osascript not found")
-    result = subprocess.run(
-        [osascript, "-l", "JavaScript", "-e", script],
+    screens_result = subprocess.run(
+        [
+            osascript,
+            "-l",
+            "JavaScript",
+            "-e",
+            "ObjC.import('AppKit'); JSON.stringify($.NSScreen.screens.js.map(function(screen) { return screen.localizedName.js; }));",
+        ],
         text=True,
         capture_output=True,
-        timeout=30,
+        timeout=15,
     )
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "macOS wallpaper update failed")
+    if screens_result.returncode != 0:
+        raise RuntimeError(screens_result.stderr.strip() or "Could not list macOS displays")
+    screens = json.loads(screens_result.stdout)
+    if not screens:
+        raise RuntimeError("No macOS displays found")
+    applied_paths = []
+    for index, name in enumerate(screens, start=1):
+        source = paths[(index - 1) % len(paths)]
+        screen_path = source.with_name(f"{source.stem}-screen-{index}{source.suffix}")
+        shutil.copy2(source, screen_path)
+        applied_paths.append(screen_path)
+        name_literal = json.dumps(name)
+        path_literal = json.dumps(str(screen_path))
+        script = f"""ObjC.import('AppKit');
+var name = {name_literal};
+var path = {path_literal};
+var screens = $.NSScreen.screens.js.filter(function(screen) {{ return screen.localizedName.js === name; }});
+if (screens.length !== 1) throw new Error('Display not found: ' + name);
+var screen = screens[0];
+var workspace = $.NSWorkspace.sharedWorkspace;
+var url = $.NSURL.fileURLWithPath(path);
+var options = workspace.desktopImageOptionsForScreen(screen);
+var error = Ref();
+var success = workspace.setDesktopImageURLForScreenOptionsError(url, screen, options, error);
+if (!success) throw new Error(error[0] ? error[0].localizedDescription.js : 'Wallpaper update failed');
+if (workspace.desktopImageURLForScreen(screen).path.js !== path) throw new Error('Wallpaper update was not retained for ' + name);"""
+        last_error = "macOS wallpaper update failed"
+        for attempt in range(3):
+            result = subprocess.run(
+                [osascript, "-l", "JavaScript", "-e", script],
+                text=True,
+                capture_output=True,
+                timeout=15,
+            )
+            if result.returncode == 0:
+                break
+            last_error = result.stderr.strip() or last_error
+            if attempt < 2:
+                time.sleep(1)
+        else:
+            raise RuntimeError(last_error)
     killall = command("killall")
     if killall:
         subprocess.run([killall, "WallpaperAgent"], check=False)
+    return applied_paths
 
 
 def set_windows(path: Path) -> None:
@@ -193,27 +249,32 @@ def set_linux(path: Path) -> None:
     raise RuntimeError("Unsupported Linux desktop; install feh or use GNOME, Cinnamon, KDE Plasma, or Xfce")
 
 
-def clean_cache(active: Path) -> None:
+def clean_cache(active: list[Path]) -> None:
+    preserved = {path.resolve() for path in active}
     cutoff = time.time() - 7 * 24 * 60 * 60
-    for path in active.parent.glob("wallpaper-*.*"):
-        if path != active and path.stat().st_mtime < cutoff:
+    for path in active[0].parent.glob("wallpaper-*.*"):
+        if path.resolve() not in preserved and path.stat().st_mtime < cutoff:
             path.unlink()
 
 
 def main() -> int:
     try:
-        path = download_wallpaper()
+        paths = download_wallpapers()
         system = platform.system()
         if system == "Darwin":
-            set_macos(path)
+            active = set_macos(paths)
         elif system == "Windows":
-            set_windows(path)
+            set_windows(paths[0])
+            active = [paths[0]]
         elif system == "Linux":
-            set_linux(path)
+            set_linux(paths[0])
+            active = [paths[0]]
         else:
             raise RuntimeError(f"Unsupported operating system: {system}")
-        clean_cache(path)
-        print(f"Wallpaper set: {path}")
+        clean_cache(active)
+        print(f"Downloaded {len(paths)} wallpaper(s)")
+        for path in paths:
+            print(path)
         return 0
     except Exception as error:
         print(error, file=sys.stderr)

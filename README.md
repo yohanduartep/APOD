@@ -1,7 +1,10 @@
 # APOD
 
-Downloads the current wallpaper from [APOD-Script](https://github.com/yohanduartep/APOD-Script)
-and applies it without requiring a NASA API key.
+Downloads every numbered wallpaper currently published by
+[APOD-Script](https://github.com/yohanduartep/APOD-Script) without requiring a NASA API key.
+
+On macOS, the downloaded images are assigned to connected displays in order. On Windows and
+Linux, the first published image is used as the system wallpaper and every image is still downloaded.
 
 ## macOS and Linux
 
