@@ -21,7 +21,7 @@ Linux support includes GNOME, Cinnamon, KDE Plasma, Xfce, and `feh`.
 .\apod.ps1
 ```
 
-Python 3 is required.
+Python 3.10 or newer is required.
 
 ## Wallpapers
 

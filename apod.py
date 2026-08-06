@@ -9,6 +9,8 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -37,13 +39,18 @@ def repository_images() -> list[tuple[str, str]]:
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         entries = json.load(response)
-    images = [
-        (entry["name"], entry["download_url"])
-        for entry in entries
-        if entry.get("type") == "file"
-        and re.fullmatch(r"\d{3}\.(?:jpe?g|png|gif|bmp|webp)", entry.get("name", ""), re.IGNORECASE)
-        and entry.get("download_url")
-    ]
+    images = []
+    for entry in entries:
+        name = entry.get("name", "")
+        url = entry.get("download_url", "")
+        parsed = urllib.parse.urlparse(url)
+        if (
+            entry.get("type") == "file"
+            and re.fullmatch(r"\d{3}\.(?:jpe?g|png|gif|bmp|webp)", name, re.IGNORECASE)
+            and parsed.scheme == "https"
+            and parsed.hostname == "raw.githubusercontent.com"
+        ):
+            images.append((name, url))
     if not images:
         raise RuntimeError("APOD-Script has no published wallpaper images")
     return sorted(images)
@@ -76,7 +83,15 @@ def download_wallpapers() -> list[Path]:
     directory = cache_directory()
     directory.mkdir(parents=True, exist_ok=True)
     run_id = time.time_ns()
-    return [download_image(name, url, directory, run_id) for name, url in repository_images()]
+    paths = []
+    try:
+        for name, url in repository_images():
+            paths.append(download_image(name, url, directory, run_id))
+        return paths
+    except (OSError, RuntimeError, TimeoutError, urllib.error.URLError):
+        for path in paths:
+            path.unlink(missing_ok=True)
+        raise
 
 
 def image_suffix(path: Path) -> str:
@@ -276,7 +291,14 @@ def main() -> int:
         for path in paths:
             print(path)
         return 0
-    except Exception as error:
+    except (
+        OSError,
+        RuntimeError,
+        TimeoutError,
+        ValueError,
+        subprocess.SubprocessError,
+        urllib.error.URLError,
+    ) as error:
         print(error, file=sys.stderr)
         return 1
 
