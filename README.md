@@ -1,17 +1,21 @@
 # APOD
-Download Astronomical Picture of the Day! This script is just a way to run <h>https://github.com/yohanduartep/APOD-Script</h> without you have to configure your API from NASA.
 
-1. Download apod.sh
+Downloads the current wallpaper from [APOD-Script](https://github.com/yohanduartep/APOD-Script)
+and applies it without requiring a NASA API key.
 
-2. Run it to download the images from NASA APOD to your $HOME/Pictures (Images updated everyday)
+## macOS and Linux
 
-3. Use some manager (I use hyprpaper) to load the image as your wallpaper.
+```bash
+chmod +x apod.sh
+./apod.sh
+```
 
-## Recommendations
+Linux support includes GNOME, Cinnamon, KDE Plasma, Xfce, and `feh`.
 
-Use your autostart or exec-once to run the script when booting your pc then just use your wallpaper manager to load the wallpaper images from you pictures folder.
+## Windows
 
-## IMAGES OF THE DAY
+```powershell
+.\apod.ps1
+```
 
-![IMAGE 1](https://raw.githubusercontent.com/yohanduartep/APOD-Script/refs/heads/main/001.jpg)
-![IMAGE 2](https://raw.githubusercontent.com/yohanduartep/APOD-Script/refs/heads/main/002.jpg)
+Python 3 is required.

@@ -1,5 +1,7 @@
-DAILY_PATH="$HOME/Pictures/001.jpg"
-RANDOM_PATH="$HOME/Pictures/002.jpg"
+#!/usr/bin/env bash
 
-wget -q -O "$DAILY_PATH" "https://raw.githubusercontent.com/yohanduartep/APOD-Script/refs/heads/main/001.jpg"
-wget -q -O "$RANDOM_PATH" "https://raw.githubusercontent.com/yohanduartep/APOD-Script/refs/heads/main/002.jpg"
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+exec python3 "$SCRIPT_DIR/apod.py" "$@"
